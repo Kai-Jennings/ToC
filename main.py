@@ -1,4 +1,4 @@
-from ast import Lexer, Parser, Flattener
+from language import Lexer, Parser, Flattener, FirstSet, FollowSet
 
 
 def run():
@@ -17,12 +17,20 @@ def run():
     flat_ast = flattener.flatten_grammar()
     print("AST Flattened")
 
-    print(flat_ast)
+    first_calc = FirstSet(flat_ast)
+    first_sets = first_calc.calculate()
+    print("First Sets Generated")
+
+    follow_calc = FollowSet(flat_ast, first_calc, "input")
+    follow_sets = follow_calc.calculate()
+    print("Follow Sets Generated\n")
+
+    for name, f_set in follow_sets.items():
+        print(f"{name}: {f_set}")
 
 
 if __name__ == "__main__":
     run()
-
 
 """
 input = { " " } , expression , { " " } ;
