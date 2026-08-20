@@ -1,5 +1,5 @@
 import re
-from ast import Parser
+from ast import Parser, Flattener
 
 with open("rules.txt", "r", encoding="utf-8") as f:
     ebnf = f.read()
@@ -50,4 +50,26 @@ def tokenise(ebnf_str):
 # print("\n".join(f"{x.type:<12}{x.value:<10}" for x in tokenise(ebnf)))
 tokens = tokenise(ebnf)
 parser = Parser(tokens)
-print(parser.parse_grammar())
+flattener = Flattener()
+print(flattener.flatten_grammar(parser.parse_grammar()))
+
+
+"""
+input = { " " } , expression , { " " } ;
+
+<input> -> <autogen1><expression><autogen2><empty space>
+
+<autogen1> -> <" "><autogen1>
+<autogen1> -> <empty space>
+<autogen2> -> <" "><autogen2>
+<autogen2> -> <empty space>
+
+variable = letter , { letter | digit | "-" } ;
+
+<variable> -> <letter><autogen3><empty space>
+<autogen3> -> <letter><autogen3>
+<autogen3> -> <digit><autogen3>
+<autogen3> -> <"-"><autogen3>
+<autogen3> -> <empty space>
+
+"""
