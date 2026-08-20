@@ -1,3 +1,12 @@
+import re
+
+
+class Token:
+    def __init__(self, _type, _value):
+        self.type = _type
+        self.value = _value
+
+
 class Node:
     pass
 
@@ -70,6 +79,44 @@ class OptionalNode(Node):
 class EpsilonNode(Node):
     def __repr__(self):
         return "Epsilon()"
+
+
+class Lexer:
+    def __init__(self, ebnf_str):
+        self.ebnf_str = ebnf_str
+        self.token_stream = []
+        self.pointer = 0
+        self.identifier_re = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
+        self.terminal_re = re.compile(r'"[^"]*"')
+        self.operators = {'=', ',', '|', '{', '}', '[', ']', ';'}
+
+    def tokenise(self):
+        while self.pointer < len(self.ebnf_str):
+
+            char = self.ebnf_str[self.pointer]
+
+            if char.isspace():
+                self.pointer += 1
+                continue
+
+            if char in self.operators:
+                self.token_stream.append(Token("OPERATOR", char))
+                self.pointer += 1
+                continue
+
+            terminal_match = self.terminal_re.match(self.ebnf_str, self.pointer)
+            if terminal_match:
+                self.token_stream.append(Token("TERMINAL", terminal_match.group(0)))
+                self.pointer = terminal_match.end()
+                continue
+
+            identifier_match = self.identifier_re.match(self.ebnf_str, self.pointer)
+            if identifier_match:
+                self.token_stream.append(Token("IDENTIFIER", identifier_match.group(0)))
+                self.pointer = identifier_match.end()
+                continue
+
+        return self.token_stream
 
 
 class Parser:
@@ -162,7 +209,8 @@ class Parser:
 
 
 class Flattener:
-    def __init__(self):
+    def __init__(self, start_node):
+        self.start_node = start_node
         self.flattened_rules = []
         self.autogen_counter = 1
 
@@ -171,8 +219,8 @@ class Flattener:
         self.autogen_counter += 1
         return name
 
-    def flatten_grammar(self, grammar_node):
-        for rule in grammar_node.children:
+    def flatten_grammar(self):
+        for rule in self.start_node.children:
             right = self.walk(rule.right)
             self.flattened_rules.append(RuleNode(rule.left, right))
 
@@ -208,3 +256,4 @@ class Flattener:
             rule = OrNode([inner, EpsilonNode()])
             self.flattened_rules.append(RuleNode(name, rule))
             return IdentifierNode(name)
+
