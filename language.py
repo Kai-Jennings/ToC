@@ -1,4 +1,4 @@
-import re
+from re import compile
 
 
 class Token:
@@ -86,8 +86,8 @@ class Lexer:
         self.ebnf_str = ebnf_str
         self.token_stream = []
         self.pointer = 0
-        self.identifier_re = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
-        self.terminal_re = re.compile(r'"[^"]*"')
+        self.identifier_re = compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
+        self.terminal_re = compile(r'"[^"]*"')
         self.operators = {'=', ',', '|', '{', '}', '[', ']', ';'}
 
     def tokenise(self):
@@ -175,7 +175,6 @@ class Parser:
     def parse_concatenation(self):
         nodes = [self.parse_term()]
 
-        token = self.look()
         while self.look() and self.look().type == "OPERATOR" and self.look().value == ",":
             self.eat("OPERATOR", ",")
             nodes.append(self.parse_term())
@@ -257,3 +256,127 @@ class Flattener:
             self.flattened_rules.append(RuleNode(name, rule))
             return IdentifierNode(name)
 
+
+class FirstSet:
+    def __init__(self, start_node):
+        self.rules = {rule.left: rule.right for rule in start_node.children}
+        self.first_sets = {name: set() for name in self.rules.keys()}
+        self.epsilon = "ε"
+
+    def calculate(self):
+        changed = True
+
+        while changed:
+            changed = False
+            for name, node in self.rules.items():
+                start_cnt = len(self.first_sets[name])
+                node_first_set = self.get_first(node)
+                self.first_sets[name].update(node_first_set)
+                if len(self.first_sets[name]) > start_cnt:
+                    changed = True
+
+        return self.first_sets
+
+    def get_first(self, node):
+        if isinstance(node, TerminalNode):
+            return {node.value}
+
+        if isinstance(node, EpsilonNode):
+            return {self.epsilon}
+
+        if isinstance(node, IdentifierNode):
+            return set(self.first_sets[node.value])
+
+        if isinstance(node, OrNode):
+            result = set()
+            for child in node.children:
+                result.update(self.get_first(child))
+            return result
+
+        if isinstance(node, ConcatenationNode):
+            result = set()
+            for child in node.children:
+                child_first_set = self.get_first(child)
+                result.update(child_first_set - {self.epsilon})
+                if self.epsilon not in child_first_set:
+                    break
+            else:
+                result.add(self.epsilon)
+            return result
+
+        return set()
+
+
+class FollowSet:
+    def __init__(self, start_node, first_calc, start_rule_name):
+        self.rules = {rule.left: rule.right for rule in start_node.children}
+        self.first_calc = first_calc
+        self.follow_sets = {name: set() for name in self.rules.keys()}
+        self.epsilon = "ε"
+        self.follow_sets[start_rule_name].add("⊣")
+
+    def calculate(self):
+        changed = True
+
+        while changed:
+            changed = False
+            for name, node in self.rules.items():
+                if self.find_follow(name, node):
+                    changed = True
+
+        return self.follow_sets
+
+    def find_follow(self, parent, node):
+        changed = False
+
+        if isinstance(node, OrNode):
+            for child in node.children:
+
+                if isinstance(child, IdentifierNode):
+                    target = child.value
+                    start_cnt = len(self.follow_sets[target])
+                    self.follow_sets[target].update(self.follow_sets[parent])
+                    if len(self.follow_sets[target]) > start_cnt:
+                        changed = True
+
+                if self.find_follow(parent, child):
+                    changed = True
+
+        if isinstance(node, ConcatenationNode):
+            for i in range(len(node.children)):
+                child = node.children[i]
+
+                if isinstance(child, IdentifierNode):
+                    target = child.value
+                    start_cnt = len(self.follow_sets[target])
+                    following_nodes = node.children[i+1:]
+
+                    if following_nodes:
+                        following_first = self.get_seq_first(following_nodes)
+                        self.follow_sets[target].update(following_first - {self.epsilon})
+
+                        if self.epsilon in following_first:
+                            self.follow_sets[target].update(self.follow_sets[parent])
+
+                    else:
+                        self.follow_sets[target].update(self.follow_sets[parent])
+
+                    if len(self.follow_sets[target]) > start_cnt:
+                        changed = True
+
+                if self.find_follow(parent, child):
+                    changed = True
+
+        return changed
+
+    def get_seq_first(self, seq):
+        result = set()
+        for node in seq:
+            child_first = self.first_calc.get_first(node)
+            result.update(child_first - {self.epsilon})
+
+            if self.epsilon not in child_first:
+                break
+        else:
+            result.add(self.epsilon)
+        return result
