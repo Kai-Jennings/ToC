@@ -67,6 +67,11 @@ class OptionalNode(Node):
         return f"Optional({self.inner})"
 
 
+class EpsilonNode(Node):
+    def __repr__(self):
+        return "Epsilon()"
+
+
 class Parser:
     def __init__(self, token_stream):
         self.tokens = token_stream
@@ -154,3 +159,52 @@ class Parser:
             inner = self.parse_expression()
             self.eat("OPERATOR", "]")
             return OptionalNode(inner)
+
+
+class Flattener:
+    def __init__(self):
+        self.flattened_rules = []
+        self.autogen_counter = 1
+
+    def get_autogen_name(self):
+        name = f"autogen_{self.autogen_counter}"
+        self.autogen_counter += 1
+        return name
+
+    def flatten_grammar(self, grammar_node):
+        for rule in grammar_node.children:
+            right = self.walk(rule.right)
+            self.flattened_rules.append(RuleNode(rule.left, right))
+
+        return GrammarNode(self.flattened_rules)
+
+    def walk(self, node):
+        if isinstance(node, (IdentifierNode, TerminalNode, EpsilonNode)):
+            return node
+
+        if isinstance(node, ConcatenationNode):
+            return ConcatenationNode([self.walk(child) for child in node.children])
+
+        if isinstance(node, OrNode):
+            return OrNode([self.walk(child) for child in node.children])
+
+        if isinstance(node, RepeatNode):
+            name = self.get_autogen_name()
+            inner = self.walk(node.inner)
+
+            # <autogen> -> inner, <autogen>
+            recursive_rule = ConcatenationNode([inner, IdentifierNode(name)])
+            # <autogen> -> epsilon
+            terminating_rule = OrNode([recursive_rule, EpsilonNode()])
+
+            self.flattened_rules.append(RuleNode(name, terminating_rule))
+            return IdentifierNode(name)
+
+        if isinstance(node, OptionalNode):
+            name = self.get_autogen_name()
+            inner = self.walk(node.inner)
+
+            # <autogen> -> inner | epsilon
+            rule = OrNode([inner, EpsilonNode()])
+            self.flattened_rules.append(RuleNode(name, rule))
+            return IdentifierNode(name)
