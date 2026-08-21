@@ -106,7 +106,7 @@ class Lexer:
 
             terminal_match = self.terminal_re.match(self.ebnf_str, self.pointer)
             if terminal_match:
-                self.token_stream.append(Token("TERMINAL", terminal_match.group(0)))
+                self.token_stream.append(Token("TERMINAL", terminal_match.group(0)[1:-1]))
                 self.pointer = terminal_match.end()
                 continue
 
@@ -220,12 +220,12 @@ class Flattener:
 
     def flatten_grammar(self):
         for rule in self.start_node.children:
-            right = self.walk(rule.right)
+            right = self.walk(rule.right, is_top_level=True)
             self.flattened_rules.append(RuleNode(rule.left, right))
 
         return GrammarNode(self.flattened_rules)
 
-    def walk(self, node):
+    def walk(self, node, is_top_level=False):
         if isinstance(node, (IdentifierNode, TerminalNode, EpsilonNode)):
             return node
 
@@ -233,7 +233,12 @@ class Flattener:
             return ConcatenationNode([self.walk(child) for child in node.children])
 
         if isinstance(node, OrNode):
-            return OrNode([self.walk(child) for child in node.children])
+            node = OrNode([self.walk(child) for child in node.children])
+            if is_top_level:
+                return node
+            name = self.get_autogen_name()
+            self.flattened_rules.append(RuleNode(name, node))
+            return IdentifierNode(name)
 
         if isinstance(node, RepeatNode):
             name = self.get_autogen_name()
@@ -321,12 +326,12 @@ class FollowSet:
         while changed:
             changed = False
             for name, node in self.rules.items():
-                if self.find_follow(name, node):
+                if self.get_follow(name, node):
                     changed = True
 
         return self.follow_sets
 
-    def find_follow(self, parent, node):
+    def get_follow(self, parent, node):
         changed = False
 
         if isinstance(node, OrNode):
@@ -339,7 +344,7 @@ class FollowSet:
                     if len(self.follow_sets[target]) > start_cnt:
                         changed = True
 
-                if self.find_follow(parent, child):
+                if self.get_follow(parent, child):
                     changed = True
 
         if isinstance(node, ConcatenationNode):
@@ -364,7 +369,7 @@ class FollowSet:
                     if len(self.follow_sets[target]) > start_cnt:
                         changed = True
 
-                if self.find_follow(parent, child):
+                if self.get_follow(parent, child):
                     changed = True
 
         return changed
@@ -380,3 +385,108 @@ class FollowSet:
         else:
             result.add(self.epsilon)
         return result
+
+
+class ParseTable:
+    def __init__(self, start_node, first_calc, follow_sets):
+        self.rules = {rule.left: rule.right for rule in start_node.children}
+        self.first_calc = first_calc
+        self.follow_sets = follow_sets
+        self.table = {name: {} for name in self.rules.keys()}
+        self.epsilon = "ε"
+
+    def generate(self):
+        for name, node in self.rules.items():
+            if isinstance(node, OrNode):
+                choices = node.children
+            else:
+                choices = [node]
+
+            for choice in choices:
+                choice_first = self.first_calc.get_first(choice)
+
+                for terminal in choice_first - {self.epsilon}:
+                    self.add_to_table(name, terminal, choice)
+
+                if self.epsilon in choice_first:
+                    for terminal in self.follow_sets[name]:
+                        self.add_to_table(name, terminal, choice)
+
+        return self.table
+
+    def add_to_table(self, non_terminal, terminal, choice):
+        if terminal in self.table[non_terminal]:
+            current_choice = self.table[non_terminal][terminal]
+            if current_choice != choice:
+                raise AssertionError("Language is not LL(1)")
+
+        self.table[non_terminal][terminal] = choice
+
+    def print_table(self):
+        for non_term, row in self.table.items():
+            print(f"{non_term}:")
+            for term, choice in row.items():
+                print(f"  {term} -> {choice}")
+
+
+class LL1Parser:
+    def __init__(self, parse_table, debug=False):
+        self.parse_table = parse_table
+        self.debug = debug
+        if self.debug:
+            with open("log.txt", "w", encoding="utf-8"):
+                pass
+
+    def parse(self, input_str, start_rule):
+        tokens = input_str + ["⊣"]
+        pointer = 0
+        stack = ["⊣", start_rule]
+
+        self.debug_print(f"Beginning parsing of '{input_str}'")
+
+        while len(stack) > 0:
+            top = stack.pop()
+            current = tokens[pointer]
+
+            self.debug_print(f"Token: '{current}' | Top: '{top}'")
+
+            if top == current:
+                self.debug_print(f"MATCHED '{current}'")
+                pointer += 1
+
+            elif top in self.parse_table:
+                if current not in self.parse_table[top]:
+                    self.debug_print(f"Unexpected token '{current}' while parsing '{top}' -- EXITING")
+                    return False
+
+                choice = self.parse_table[top][current]
+                self.debug_print(f"EXPANDING {top} to {choice}")
+                symbols = self.extract_symbols(choice)
+
+                for symbol in reversed(symbols):
+                    if symbol != "ε":
+                        stack.append(symbol)
+
+            else:
+                self.debug_print(f"Expected '{top}', but found '{current}' -- EXITING")
+                return False
+
+        self.debug_print("Parse Successful -- EXITING")
+        return True
+
+    def extract_symbols(self, node):
+        if isinstance(node, EpsilonNode):
+            return ["ε"]
+        if isinstance(node, (TerminalNode, IdentifierNode)):
+            return [node.value]
+        if isinstance(node, ConcatenationNode):
+            symbols = []
+            for child in node.children:
+                symbols.extend(self.extract_symbols(child))
+            return symbols
+
+    def debug_print(self, msg):
+        if not self.debug:
+            return
+        with open("log.txt", "a", encoding='utf-8') as f:
+            f.write(f"[ DEBUG ] {msg}\n")
