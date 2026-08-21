@@ -1,4 +1,4 @@
-from language import Lexer, Parser, Flattener, FirstSet, FollowSet
+from language import Lexer, Parser, Flattener, FirstSet, FollowSet, ParseTable, LL1Parser
 
 
 def run():
@@ -23,10 +23,14 @@ def run():
 
     follow_calc = FollowSet(flat_ast, first_calc, "input")
     follow_sets = follow_calc.calculate()
-    print("Follow Sets Generated\n")
+    print("Follow Sets Generated")
 
-    for name, f_set in follow_sets.items():
-        print(f"{name}: {f_set}")
+    table_gen = ParseTable(flat_ast, first_calc, follow_sets)
+    ll1_table = table_gen.generate()
+    print("Generated LL(1) Parse Table")
+
+    ll1_parser = LL1Parser(ll1_table, debug=True)
+    print(ll1_parser.parse(list("λx.λy.λz.xyz"), "input"))
 
 
 if __name__ == "__main__":
