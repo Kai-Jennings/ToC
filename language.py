@@ -6,6 +6,9 @@ class Token:
         self.type = _type
         self.value = _value
 
+    def __repr__(self):
+        return f"({self.type}: {self.value})"
+
 
 class Node:
     pass
@@ -76,6 +79,14 @@ class OptionalNode(Node):
         return f"Optional({self.inner})"
 
 
+class GroupingNode(Node):
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __repr__(self):
+        return f"Group({self.inner})"
+
+
 class EpsilonNode(Node):
     def __repr__(self):
         return "Epsilon()"
@@ -88,7 +99,7 @@ class Lexer:
         self.pointer = 0
         self.identifier_re = compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
         self.terminal_re = compile(r'"[^"]*"')
-        self.operators = {'=', ',', '|', '{', '}', '[', ']', ';'}
+        self.operators = {'=', ',', '|', '{', '}', '[', ']', '(', ')', ';'}
 
     def tokenise(self):
         while self.pointer < len(self.ebnf_str):
@@ -192,7 +203,9 @@ class Parser:
 
         if token.type == "TERMINAL":
             self.eat("TERMINAL")
-            return TerminalNode(token.value)
+            if token.value:
+                return TerminalNode(token.value)
+            return EpsilonNode()
 
         if token.type == "OPERATOR" and token.value == "{":
             self.eat("OPERATOR", "{")
@@ -205,6 +218,12 @@ class Parser:
             inner = self.parse_expression()
             self.eat("OPERATOR", "]")
             return OptionalNode(inner)
+
+        if token.type == "OPERATOR" and token.value == "(":
+            self.eat("OPERATOR", "(")
+            inner = self.parse_expression()
+            self.eat("OPERATOR", ")")
+            return GroupingNode(inner)
 
 
 class Flattener:
@@ -260,6 +279,9 @@ class Flattener:
             rule = OrNode([inner, EpsilonNode()])
             self.flattened_rules.append(RuleNode(name, rule))
             return IdentifierNode(name)
+
+        if isinstance(node, GroupingNode):
+            return self.walk(node.inner)
 
 
 class FirstSet:
@@ -437,10 +459,10 @@ class LL1Parser:
             with open("log.txt", "w", encoding="utf-8"):
                 pass
 
-    def parse(self, input_str, start_rule):
+    def parse(self, input_str, start_rule_name):
         tokens = input_str + ["⊣"]
         pointer = 0
-        stack = ["⊣", start_rule]
+        stack = ["⊣", start_rule_name]
 
         self.debug_print(f"Beginning parsing of '{input_str}'")
 
@@ -490,3 +512,40 @@ class LL1Parser:
             return
         with open("log.txt", "a", encoding='utf-8') as f:
             f.write(f"[ DEBUG ] {msg}\n")
+
+
+class Engine:
+    def __init__(self, start_rule_name, rule_file="rules.txt"):
+        self.start_rule_name = start_rule_name
+        self.rule_file = rule_file
+
+        with open(self.rule_file, "r", encoding="utf-8") as f:
+            self.ebnf = f.read()
+
+        self.lexer = Lexer(self.ebnf)
+        self.token_stream = self.lexer.tokenise()
+        print("Token Stream Generated")
+
+        self.parser = Parser(self.token_stream)
+        self.ast = self.parser.parse_grammar()
+        print("AST Generated")
+
+        self.flattener = Flattener(self.ast)
+        self.flat_ast = self.flattener.flatten_grammar()
+        print("AST Flattened")
+
+        self.first_calc = FirstSet(self.flat_ast)
+        self.first_sets = self.first_calc.calculate()
+        print("First Sets Generated")
+
+        self.follow_calc = FollowSet(self.flat_ast, self.first_calc, self.start_rule_name)
+        self.follow_sets = self.follow_calc.calculate()
+        print("Follow Sets Generated")
+
+        self.table_gen = ParseTable(self.flat_ast, self.first_calc, self.follow_sets)
+        self.ll1_table = self.table_gen.generate()
+        print("Generated LL(1) Parse Table")
+
+    def parse(self, input_stream, debug=False):
+        ll1_parser = LL1Parser(self.ll1_table, debug=debug)
+        return ll1_parser.parse(input_stream, self.start_rule_name)
