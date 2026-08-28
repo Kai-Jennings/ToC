@@ -1,4 +1,5 @@
-from re import compile
+from re import compile as re_compile
+from random import choice as random_choice
 
 
 class Token:
@@ -97,8 +98,8 @@ class Lexer:
         self.ebnf_str = ebnf_str
         self.token_stream = []
         self.pointer = 0
-        self.identifier_re = compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
-        self.terminal_re = compile(r'"[^"]*"')
+        self.identifier_re = re_compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
+        self.terminal_re = re_compile(r'"[^"]*"')
         self.operators = {'=', ',', '|', '{', '}', '[', ']', '(', ')', ';'}
 
     def tokenise(self):
@@ -147,10 +148,10 @@ class Parser:
             raise SyntaxError("You can't end the token stream here idiot")
 
         if token.type != expect_t:
-            raise SyntaxError(f"Expected {expect_t}, got {token.type}")
+            raise SyntaxError(f"Expected {expect_t}, got {token.type} '{token.value}'")
 
         if expect_v and token.value != expect_v:
-            raise SyntaxError(f"Expected {expect_v}, got {token.value}")
+            raise SyntaxError(f"Expected {expect_v}, got '{token.value}'")
 
         self.pointer += 1
         return token
@@ -514,6 +515,41 @@ class LL1Parser:
             f.write(f"[ DEBUG ] {msg}\n")
 
 
+class GrammarGenerator:
+    def __init__(self, rules_dict, max_depth=15):
+        self.rules = rules_dict
+        self.max_depth = max_depth
+
+    def generate(self, start_rule_name):
+        return self.walk(IdentifierNode(start_rule_name), 0)
+
+    def walk(self, node, depth):
+        if isinstance(node, EpsilonNode):
+            return ""
+
+        if isinstance(node, TerminalNode):
+            return node.value
+
+        if isinstance(node, IdentifierNode):
+            target_node = self.rules[node.value]
+            return self.walk(target_node, depth + 1)
+
+        if isinstance(node, ConcatenationNode):
+            result = []
+            for child in node.children:
+                result.append(self.walk(child, depth))
+            return "".join(result)
+
+        if isinstance(node, OrNode):
+            if depth > self.max_depth:
+                for child in node.children:
+                    if isinstance(node, EpsilonNode):
+                        return self.walk(child, depth)
+
+            chosen = random_choice(node.children)
+            return self.walk(chosen, depth)
+
+
 class Engine:
     def __init__(self, start_rule_name, rule_file="rules.txt"):
         self.start_rule_name = start_rule_name
@@ -524,28 +560,35 @@ class Engine:
 
         self.lexer = Lexer(self.ebnf)
         self.token_stream = self.lexer.tokenise()
-        print("Token Stream Generated")
+        # print("Token Stream Generated")
 
         self.parser = Parser(self.token_stream)
         self.ast = self.parser.parse_grammar()
-        print("AST Generated")
+        # print("AST Generated")
 
         self.flattener = Flattener(self.ast)
         self.flat_ast = self.flattener.flatten_grammar()
-        print("AST Flattened")
+        # print("AST Flattened")
 
         self.first_calc = FirstSet(self.flat_ast)
         self.first_sets = self.first_calc.calculate()
-        print("First Sets Generated")
+        # print("First Sets Generated")
 
         self.follow_calc = FollowSet(self.flat_ast, self.first_calc, self.start_rule_name)
         self.follow_sets = self.follow_calc.calculate()
-        print("Follow Sets Generated")
+        # print("Follow Sets Generated")
 
         self.table_gen = ParseTable(self.flat_ast, self.first_calc, self.follow_sets)
         self.ll1_table = self.table_gen.generate()
-        print("Generated LL(1) Parse Table")
+        # print("LL(1) Parse Table Generated")
 
-    def parse(self, input_stream, debug=False):
+    def parse(self, input_stream, single_char_tokens=True, debug=False):
+        if single_char_tokens:
+            input_stream = list(input_stream)
         ll1_parser = LL1Parser(self.ll1_table, debug=debug)
         return ll1_parser.parse(input_stream, self.start_rule_name)
+
+    def generate(self, start_rule_name, max_depth=15):
+        rules = {rule.left: rule.right for rule in self.flat_ast.children}
+        generator = GrammarGenerator(rules, max_depth=max_depth)
+        return generator.generate(start_rule_name)
