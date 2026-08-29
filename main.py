@@ -2,7 +2,7 @@ from language import Engine
 
 if __name__ == "__main__":
     engine = Engine("input")
-    print(engine.parse(list("λx.λy.λz.xyz"), debug=True))
+    print(engine.parse("λx.λy.λz.xyz"))
 
 """
 input = { " " } , expression , { " " } ;
