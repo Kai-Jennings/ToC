@@ -1,5 +1,5 @@
 ## To Do List
-* Reduce all multi-character terminals to a single character and concatenate to allow for single character parsing.
+* [x] Reduce all multi-character terminals to a single character and concatenate to allow for single character parsing.
   * `rule = "terminal";` becomes `rule = "t", "e", "r", "m", "i", "n", "a", "l";`
 * Optimise nested grouping AST generation.
   * Currently `rule = "a", ("a", ("a", ("a")));` generates `Rule(rule = Concat([Term(a), Concat([Term(a), Concat([Term(a), Term(a)])])]))`. Should instead produce `Rule(rule = Concat([Term(a), Term(a), Term(a), Term(a)]))`
@@ -32,4 +32,4 @@
   * For example you may want to see the AST of a language that isn't LL(1) but currently that will exit the program since we cannot parse it.
   * Goes hand in hand with making it more user friendly, since its currently kind of janky.
 * Potentially add support for more EBNF syntactic sugar such as `+`, `-` and `*`.
-* MY TOC REPORT
+* [x] MY TOC REPORT
