@@ -1,11 +1,3 @@
-breakfast = bread | protein, ["with", breakfast, "on the side"] ;
-protein = type, "eggs" | crispiness, "crispy", "bacon" | "sausage" ;
-type = "scrambled" | "poached" | "fried";
-crispiness = really, { really };
-really = "really" ;
-cooked = "scrambled" | "poached" | "fried" ;
-bread = "toast" | "biscuits" | "English muffin" ;
-
 input = { " " } , expression , { " " } ;
 expression = numeral | variable | glyph | abstraction | application ;
 numeral = digit , { digit } ;
