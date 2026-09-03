@@ -246,8 +246,14 @@ class Flattener:
         return GrammarNode(self.flattened_rules)
 
     def walk(self, node, is_top_level=False):
-        if isinstance(node, (IdentifierNode, TerminalNode, EpsilonNode)):
+        if isinstance(node, (IdentifierNode, EpsilonNode)):
             return node
+
+        if isinstance(node, TerminalNode):
+            terminal_concat = [TerminalNode(char) for char in node.value]
+            if len(terminal_concat) > 1:
+                return ConcatenationNode(terminal_concat)
+            return terminal_concat[0]
 
         if isinstance(node, ConcatenationNode):
             return ConcatenationNode([self.walk(child) for child in node.children])
@@ -441,7 +447,7 @@ class ParseTable:
         if terminal in self.table[non_terminal]:
             current_choice = self.table[non_terminal][terminal]
             if current_choice != choice:
-                raise AssertionError("Language is not LL(1)")
+                raise AssertionError(f"Language is not LL(1). Ambiguous parsing of character '{terminal}' at rule '{non_terminal}'.")
 
         self.table[non_terminal][terminal] = choice
 
@@ -582,9 +588,8 @@ class Engine:
         self.ll1_table = self.table_gen.generate()
         # print("LL(1) Parse Table Generated")
 
-    def parse(self, input_stream, single_char_tokens=True, debug=False):
-        if single_char_tokens:
-            input_stream = list(input_stream)
+    def parse(self, input_stream, debug=False):
+        input_stream = list(input_stream)
         ll1_parser = LL1Parser(self.ll1_table, debug=debug)
         return ll1_parser.parse(input_stream, self.start_rule_name)
 
