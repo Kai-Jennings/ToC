@@ -11,11 +11,10 @@ class TM:
             "✔": self.accepting_state,
             "comp_asc_begin": self.comp_asc_begin,
             "comp_dsc_begin": self.comp_dsc_begin,
-            "swap_dsc_begin": self.swap_dsc_begin,
+            "swap_lo_begin": self.swap_lo_begin,
+            "swap_hi_begin": self.swap_hi_begin,
             "goto_next_elem_comp": self.goto_next_elem_comp,
             "goto_curr_elem_comp": self.goto_curr_elem_comp,
-            "goto_next_elem_swap": self.goto_next_elem_swap,
-            "goto_curr_elem_swap": self.goto_curr_elem_swap,
             "goto_start": self.goto_start,
             "goto_prev_2": self.goto_prev_2,
             "goto_prev_1": self.goto_prev_1,
@@ -45,16 +44,17 @@ class TM:
 
                     self.transitions.update({f"comp_{direction}_{character}_{step}": __gen_comp_wrapper__()})
 
-                    def __gen_swap_wrapper__(d=direction, c=character, s=step):
-                        def __gen_swap__():
-                            self.state = f"swap_{d}_{c}_{s-1}"
-                            if d == "asc":
-                                self.inc()
-                            else:
-                                self.dec()
-                        return __gen_swap__
+                    for begin in ["lo", "hi"]:
+                        def __gen_swap_wrapper__(d=direction, c=character, s=step, b=begin):
+                            def __gen_swap__():
+                                self.state = f"swap_{b}_{d}_{c}_{s-1}"
+                                if d == "asc":
+                                    self.inc()
+                                else:
+                                    self.dec()
+                            return __gen_swap__
 
-                    self.transitions.update({f"swap_{direction}_{character}_{step}": __gen_swap_wrapper__()})
+                        self.transitions.update({f"swap_{begin}_{direction}_{character}_{step}": __gen_swap_wrapper__()})
 
             def __gen_comp_asc_final_wrapper__(c=character):
                 def __gen_comp_asc_final__():
@@ -63,7 +63,8 @@ class TM:
                         self.state = "goto_curr_elem_comp"
                         self.dec()
                     elif ord(c) > ord(other):
-                        self.state = "goto_curr_elem_swap"
+                        self.write(c)
+                        self.state = f"swap_lo_dsc_{other}_16"
                         self.dec()
                     else:
                         self.state = "comp_dsc_begin"
@@ -80,7 +81,8 @@ class TM:
                         self.state = "goto_next_elem_comp"
                         self.inc()
                     elif ord(other) > ord(c):
-                        self.state = "goto_next_elem_swap"
+                        self.write(c)
+                        self.state = f"swap_hi_asc_{other}_16"
                         self.inc()
                     else:
                         self.state = "comp_asc_begin"
@@ -90,26 +92,46 @@ class TM:
 
             self.transitions.update({f"comp_dsc_{character}_0": __gen_comp_dsc_final_wrapper__()})
 
-            def __gen_swap_asc_final_wrapper__(c=character):
-                def __gen_swap_asc_final__():
+            def __gen_swap_hi_asc_final_wrapper__(c=character):
+                def __gen_swap_hi_asc_final__():
                     self.write(c)
-                    self.state = "swap_dsc_begin"
+                    self.state = f"swap_hi_begin"
                     self.inc()
 
-                return __gen_swap_asc_final__
+                return __gen_swap_hi_asc_final__
 
-            self.transitions.update({f"swap_asc_{character}_0": __gen_swap_asc_final_wrapper__()})
+            self.transitions.update({f"swap_hi_asc_{character}_0": __gen_swap_hi_asc_final_wrapper__()})
 
-            def __gen_swap_dsc_final_wrapper__(c=character):
-                def __gen_swap_dsc_final__():
+            def __gen_swap_hi_dsc_final_wrapper__(c=character):
+                def __gen_swap_hi_dsc_final__():
                     other = self.read()
                     self.write(c)
-                    self.state = f"swap_asc_{other}_16"
+                    self.state = f"swap_hi_asc_{other}_16"
                     self.inc()
 
-                return __gen_swap_dsc_final__
+                return __gen_swap_hi_dsc_final__
 
-            self.transitions.update({f"swap_dsc_{character}_0": __gen_swap_dsc_final_wrapper__()})
+            self.transitions.update({f"swap_hi_dsc_{character}_0": __gen_swap_hi_dsc_final_wrapper__()})
+
+            def __gen_swap_lo_asc_final_wrapper__(c=character):
+                def __gen_swap_lo_asc_final__():
+                    other = self.read()
+                    self.write(c)
+                    self.state = f"swap_lo_dsc_{other}_16"
+                    self.dec()
+
+                return __gen_swap_lo_asc_final__
+
+            self.transitions.update({f"swap_lo_asc_{character}_0": __gen_swap_lo_asc_final_wrapper__()})
+
+            def __gen_swap_lo_dsc_final_wrapper__(c=character):
+                def __gen_swap_lo_dsc_final__():
+                    self.write(c)
+                    self.state = f"swap_lo_begin"
+                    self.inc()
+                return __gen_swap_lo_dsc_final__
+
+            self.transitions.update({f"swap_lo_dsc_{character}_0": __gen_swap_lo_dsc_final_wrapper__()})
 
     def inc(self):
         self.ptr += 1
@@ -143,6 +165,9 @@ class TM:
         while True:
             self.cntr += 1
             self.transitions[self.state]()
+            # self.print_tape()
+            # print(self.state)
+            # input()
             # self.debug.append(self.state)
 
     def start(self):
@@ -165,14 +190,23 @@ class TM:
         self.state = f"comp_dsc_{char}_16"
         self.dec()
 
-    def swap_dsc_begin(self):
+    def swap_hi_begin(self):
         char = self.read()
         if char == "," or char == "]":
             self.state = "goto_prev_2"
             self.dec()
         else:
-            self.state = f"swap_dsc_{char}_16"
+            self.state = f"swap_hi_dsc_{char}_16"
             self.dec()
+
+    def swap_lo_begin(self):
+        char = self.read()
+        if char == ",":
+            self.state = "goto_prev_1"
+            self.dec()
+        else:
+            self.state = f"swap_lo_asc_{char}_16"
+            self.inc()
 
     def goto_next_elem_comp(self):
         char = self.read()
@@ -189,22 +223,6 @@ class TM:
         char = self.read()
         if char == ",":
             self.state = "comp_asc_begin"
-            self.inc()
-        else:
-            self.dec()
-
-    def goto_next_elem_swap(self):
-        char = self.read()
-        if char == ",":
-            self.state = "swap_dsc_begin"
-            self.inc()
-        else:
-            self.inc()
-
-    def goto_curr_elem_swap(self):
-        char = self.read()
-        if char == ",":
-            self.state = "swap_dsc_begin"
             self.inc()
         else:
             self.dec()
